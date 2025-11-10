@@ -49,6 +49,24 @@ async function run() {
       res.send(result);
     });
 
+    app.put("/models/:id", async (req, res) => {
+      const { id } = req.params;
+      const data = req.body;
+      console.log(id);
+      const objectId = new ObjectId(id);
+
+      const query = { _id: objectId };
+      const update = {
+        $set: data,
+      };
+
+      const result = await aiModelCollection.updateOne(query, update);
+      res.send({
+        success: true,
+        result,
+      });
+    });
+
     // -------------
 
     await client.db("admin").command({ ping: 1 });
