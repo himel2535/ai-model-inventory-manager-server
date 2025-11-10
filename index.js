@@ -70,10 +70,19 @@ async function run() {
     app.delete("/models/:id", async (req, res) => {
       const { id } = req.params;
       const objectId = new ObjectId(id);
-      const query={_id:objectId}
+      const query = { _id: objectId };
 
-      const result=await aiModelCollection.deleteOne(query)
-      res.send(result)
+      const result = await aiModelCollection.deleteOne(query);
+      res.send(result);
+    });
+
+    app.get("/latest-models", async (req, res) => {
+      const result = await aiModelCollection
+        .find()
+        .sort({ createdAt: -1})
+        .limit(6)
+        .toArray();
+      res.send(result);
     });
 
     // -------------
