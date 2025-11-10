@@ -67,6 +67,15 @@ async function run() {
       });
     });
 
+    app.delete("/models/:id", async (req, res) => {
+      const { id } = req.params;
+      const objectId = new ObjectId(id);
+      const query={_id:objectId}
+
+      const result=await aiModelCollection.deleteOne(query)
+      res.send(result)
+    });
+
     // -------------
 
     await client.db("admin").command({ ping: 1 });
