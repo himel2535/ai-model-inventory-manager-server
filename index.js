@@ -5,7 +5,6 @@ const { MongoClient, ServerApiVersion } = require("mongodb");
 const app = express();
 const port = process.env.PORT || 3000;
 
-
 // ---middleware---
 app.use(cors());
 app.use(express.json());
@@ -31,6 +30,12 @@ async function run() {
 
     app.get("/models", async (req, res) => {
       const result = await aiModelCollection.find().toArray();
+      res.send(result);
+    });
+
+    app.post("/models", async (req, res) => {
+      const data = req.body;
+      const result = await aiModelCollection.insertOne(data);
       res.send(result);
     });
 
