@@ -169,6 +169,15 @@ async function run() {
       res.send(result);
     });
 
+    // ----Search -----
+    app.get("/search", async (req, res) => {
+      const search_text = req.query.search;
+      const result = await aiModelCollection
+        .find({ name: { $regex: search_text, $options: "i" } })
+        .toArray();
+      res.send(result);
+    });
+
     // -------------
 
     await client.db("admin").command({ ping: 1 });
