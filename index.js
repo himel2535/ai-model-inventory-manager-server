@@ -138,31 +138,25 @@ async function run() {
     });
 
     // ----Purchased Model create----
-    app.post("/purchased-model", async (req, res) => {
+    app.post("/purchased-model/:id", async (req, res) => {
       try {
-        const model = req.body;
+        const data = req.body;
+        const id = req.params.id;
 
-        const { _id, ...rest } = model;
+        const result = await purchaseModelCollection.insertOne(data);
 
-        const newPurchase = {
-          ...rest,
-          modelId: _id,
-          purchasedBy: model.purchasedBy,
-          // purchasedAt: new Date(),
-        };
+        // --increase Count purchase---
+        const filter = { _id: new ObjectId(id) };
+        const update = { $inc: { purchased: 1 } };
+        const updatedModel = await aiModelCollection.updateOne(filter, update);
 
-        const result = await purchaseModelCollection.insertOne(newPurchase);
         res.send({
-          success: true,
-          message: "Model purchased successfully",
-          data: result,
+          result,
+          updatedModel,
         });
-      } catch (error) {
-        console.error(" Error in /purchased-model:", error);
-        res.status(500).send({
-          success: false,
-          message: "Internal Server Error while purchasing model",
-        });
+      } catch (err) {
+        console.error(err);
+        res.status(500).send({ error: "Something went wrong" });
       }
     });
 
