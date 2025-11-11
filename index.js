@@ -2,12 +2,47 @@ const express = require("express");
 const cors = require("cors");
 require("dotenv").config();
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
+const admin = require("firebase-admin");
+
+const serviceAccount = require("./ai-model-inventory-service-key.json");
 const app = express();
 const port = process.env.PORT || 3000;
 
 // ---middleware---
+
 app.use(cors());
 app.use(express.json());
+
+admin.initializeApp({
+  credential: admin.credential.cert({
+    projectId: process.env.FIREBASE_PROJECT_ID,
+    clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+    privateKey: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, "\n"),
+  }),
+});
+
+const verifyFBToken = async (req, res, next) => {
+  const authorization = req.headers.authorization;
+
+  if (!authorization) {
+    return res.status(401).send({
+      message: "Unauthorized access, Token not found",
+    });
+  }
+
+  const token = authorization.split(" ")[1];
+
+  try {
+    await admin.auth().verifyIdToken(token);
+    next();
+  } catch (error) {
+    res.status(401).send({
+      message: "Unauthorized access",
+    });
+  }
+};
+
+// --------------------
 
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@himelcluster.fxzuftr.mongodb.net/?appName=HimelCluster`;
 
@@ -26,16 +61,20 @@ async function run() {
     const db = client.db("ai-models-db");
     const aiModelCollection = db.collection("ai-models");
 
+    const purchaseModelCollection = db.collection("purchased-model");
+
     // -------------
 
     // ---Models---
 
+    // ---all models get---
     app.get("/models", async (req, res) => {
       const result = await aiModelCollection.find().toArray();
       res.send(result);
     });
 
-    app.get("/models/:id", async (req, res) => {
+    // ---view details get---
+    app.get("/models/:id", verifyFBToken, async (req, res) => {
       const { id } = req.params;
       const objectId = new ObjectId(id);
 
@@ -43,12 +82,14 @@ async function run() {
       res.send(result);
     });
 
+    // ----Create Model----
     app.post("/models", async (req, res) => {
       const data = req.body;
       const result = await aiModelCollection.insertOne(data);
       res.send(result);
     });
 
+    // ----Update Model---
     app.put("/models/:id", async (req, res) => {
       const { id } = req.params;
       const data = req.body;
@@ -67,6 +108,7 @@ async function run() {
       });
     });
 
+    // ----Delete Models----
     app.delete("/models/:id", async (req, res) => {
       const { id } = req.params;
       const objectId = new ObjectId(id);
@@ -76,6 +118,7 @@ async function run() {
       res.send(result);
     });
 
+    // ----Latest Models----
     app.get("/latest-models", async (req, res) => {
       const result = await aiModelCollection
         .find()
@@ -85,10 +128,49 @@ async function run() {
       res.send(result);
     });
 
-    app.get("/my-models", async (req, res) => {
+    // ----My Models----
+    app.get("/my-models", verifyFBToken, async (req, res) => {
       const email = req.query.email;
       const result = await aiModelCollection
         .find({ createdBy: email })
+        .toArray();
+      res.send(result);
+    });
+
+    // ----Purchased Model create----
+    app.post("/purchased-model", async (req, res) => {
+      try {
+        const model = req.body;
+
+        const { _id, ...rest } = model;
+
+        const newPurchase = {
+          ...rest,
+          modelId: _id,
+          purchasedBy: model.purchasedBy,
+          // purchasedAt: new Date(),
+        };
+
+        const result = await purchaseModelCollection.insertOne(newPurchase);
+        res.send({
+          success: true,
+          message: "Model purchased successfully",
+          data: result,
+        });
+      } catch (error) {
+        console.error(" Error in /purchased-model:", error);
+        res.status(500).send({
+          success: false,
+          message: "Internal Server Error while purchasing model",
+        });
+      }
+    });
+
+    // ----Purchased Model Page get---
+    app.get("/model-purchase-page", verifyFBToken, async (req, res) => {
+      const email = req.query.email;
+      const result = await purchaseModelCollection
+        .find({ purchasedBy: email })
         .toArray();
       res.send(result);
     });
