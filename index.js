@@ -79,8 +79,16 @@ async function run() {
     app.get("/latest-models", async (req, res) => {
       const result = await aiModelCollection
         .find()
-        .sort({ createdAt: -1})
+        .sort({ createdAt: -1 })
         .limit(6)
+        .toArray();
+      res.send(result);
+    });
+
+    app.get("/my-models", async (req, res) => {
+      const email = req.query.email;
+      const result = await aiModelCollection
+        .find({ createdBy: email })
         .toArray();
       res.send(result);
     });
