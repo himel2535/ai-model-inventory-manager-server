@@ -169,12 +169,23 @@ async function run() {
       res.send(result);
     });
 
-    // ----Search -----
+
+    // ---search and filter---
+
     app.get("/search", async (req, res) => {
-      const search_text = req.query.search;
-      const result = await aiModelCollection
-        .find({ name: { $regex: search_text, $options: "i" } })
-        .toArray();
+      const search_text = req.query.search || "";
+      const framework = req.query.framework || "";
+
+     
+      const query = {
+        name: { $regex: search_text, $options: "i" },
+      };
+
+      if (framework) {
+        query.framework = framework;
+      }
+
+      const result = await aiModelCollection.find(query).toArray();
       res.send(result);
     });
 
