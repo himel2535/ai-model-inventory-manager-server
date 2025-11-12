@@ -4,7 +4,6 @@ require("dotenv").config();
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const admin = require("firebase-admin");
 
-// const serviceAccount = require("./ai-model-inventory-service-key.json");
 const app = express();
 const port = process.env.PORT || 3000;
 
@@ -83,7 +82,7 @@ async function run() {
     });
 
     // ----Create Model----
-    app.post("/models", async (req, res) => {
+    app.post("/models",  async (req, res) => {
       const data = req.body;
       const result = await aiModelCollection.insertOne(data);
       res.send(result);
@@ -109,7 +108,7 @@ async function run() {
     });
 
     // ----Delete Models----
-    app.delete("/models/:id", async (req, res) => {
+    app.delete("/models/:id", verifyFBToken, async (req, res) => {
       const { id } = req.params;
       const objectId = new ObjectId(id);
       const query = { _id: objectId };
@@ -138,7 +137,7 @@ async function run() {
     });
 
     // ----Purchased Model create----
-    app.post("/purchased-model/:id", async (req, res) => {
+    app.post("/purchased-model/:id",  async (req, res) => {
       try {
         const data = req.body;
         const id = req.params.id;
@@ -161,7 +160,7 @@ async function run() {
     });
 
     // ----Purchased Model Page get---
-    app.get("/model-purchase-page", verifyFBToken, async (req, res) => {
+    app.get("/model-purchase-page",  async (req, res) => {
       const email = req.query.email;
       const result = await purchaseModelCollection
         .find({ purchasedBy: email })
