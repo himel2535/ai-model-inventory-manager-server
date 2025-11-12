@@ -4,7 +4,7 @@ require("dotenv").config();
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const admin = require("firebase-admin");
 
-const serviceAccount = require("./ai-model-inventory-service-key.json");
+// const serviceAccount = require("./ai-model-inventory-service-key.json");
 const app = express();
 const port = process.env.PORT || 3000;
 
@@ -90,7 +90,7 @@ async function run() {
     });
 
     // ----Update Model---
-    app.put("/models/:id", async (req, res) => {
+    app.put("/models/:id", verifyFBToken, async (req, res) => {
       const { id } = req.params;
       const data = req.body;
       console.log(id);
@@ -169,14 +169,12 @@ async function run() {
       res.send(result);
     });
 
-
     // ---search and filter---
 
     app.get("/search", async (req, res) => {
       const search_text = req.query.search || "";
       const framework = req.query.framework || "";
 
-     
       const query = {
         name: { $regex: search_text, $options: "i" },
       };
