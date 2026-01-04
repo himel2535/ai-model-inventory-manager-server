@@ -1,3 +1,4 @@
 node_modules
 .env
 ai-model-inventory-service-key.json
+.vercel

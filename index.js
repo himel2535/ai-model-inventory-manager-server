@@ -12,12 +12,14 @@ const port = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json());
 
+const decoded = Buffer.from(
+  process.env.FIREBASE_SERVICE_KEY,
+  "base64"
+).toString("utf8");
+const serviceAccount = JSON.parse(decoded);
+
 admin.initializeApp({
-  credential: admin.credential.cert({
-    projectId: process.env.FIREBASE_PROJECT_ID,
-    clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-    privateKey: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, "\n"),
-  }),
+  credential: admin.credential.cert(serviceAccount),
 });
 
 const verifyFBToken = async (req, res, next) => {
@@ -55,25 +57,30 @@ const client = new MongoClient(uri, {
 
 async function run() {
   try {
-    await client.connect();
+    // await client.connect();
 
     const db = client.db("ai-models-db");
     const aiModelCollection = db.collection("ai-models");
 
     const purchaseModelCollection = db.collection("purchased-model");
+    const userCollection = db.collection("users");
 
-    // -------------
 
     // ---Models---
 
-    // ---all models get---
+
+    // ---all models get--- (only approved models)
+
     app.get("/models", async (req, res) => {
-      const result = await aiModelCollection.find().toArray();
+      const result = await aiModelCollection
+        .find({ approvalStatus: "approved" })
+        .toArray();
       res.send(result);
     });
 
+
     // ---view details get---
-    app.get("/models/:id", verifyFBToken, async (req, res) => {
+    app.get("/models/:id", async (req, res) => {
       const { id } = req.params;
       const objectId = new ObjectId(id);
 
@@ -81,12 +88,27 @@ async function run() {
       res.send(result);
     });
 
+
     // ----Create Model----
-    app.post("/models",  async (req, res) => {
+    app.post("/models", verifyFBToken, async (req, res) => {
       const data = req.body;
-      const result = await aiModelCollection.insertOne(data);
+      const userEmail = data.createdBy;
+      
+      // Check if user is admin
+      const user = await userCollection.findOne({ email: userEmail });
+      const isAdmin = user?.role === "admin";
+      
+      // Set approval status based on user role
+      const modelData = {
+        ...data,
+        approvalStatus: isAdmin ? "approved" : "pending",
+        createdAt: new Date()
+      };
+      
+      const result = await aiModelCollection.insertOne(modelData);
       res.send(result);
     });
+
 
     // ----Update Model---
     app.put("/models/:id", verifyFBToken, async (req, res) => {
@@ -107,6 +129,7 @@ async function run() {
       });
     });
 
+
     // ----Delete Models----
     app.delete("/models/:id", verifyFBToken, async (req, res) => {
       const { id } = req.params;
@@ -117,15 +140,17 @@ async function run() {
       res.send(result);
     });
 
-    // ----Latest Models----
+
+    // ----Latest Models---- (only approved)
     app.get("/latest-models", async (req, res) => {
       const result = await aiModelCollection
-        .find()
+        .find({ approvalStatus: "approved" })
         .sort({ createdAt: -1 })
         .limit(6)
         .toArray();
       res.send(result);
     });
+
 
     // ----My Models----
     app.get("/my-models", verifyFBToken, async (req, res) => {
@@ -136,8 +161,9 @@ async function run() {
       res.send(result);
     });
 
+
     // ----Purchased Model create----
-    app.post("/purchased-model/:id",  async (req, res) => {
+    app.post("/purchased-model/:id", async (req, res) => {
       try {
         const data = req.body;
         const id = req.params.id;
@@ -159,8 +185,9 @@ async function run() {
       }
     });
 
+
     // ----Purchased Model Page get---
-    app.get("/model-purchase-page",  async (req, res) => {
+    app.get("/model-purchase-page", async (req, res) => {
       const email = req.query.email;
       const result = await purchaseModelCollection
         .find({ purchasedBy: email })
@@ -168,6 +195,7 @@ async function run() {
       res.send(result);
     });
 
+    
     // ---search and filter---
 
     app.get("/search", async (req, res) => {
@@ -186,9 +214,211 @@ async function run() {
       res.send(result);
     });
 
+    // --- User Roles & Synchronization ---
+
+    // app.put("/users", async (req, res) => {
+    //   try {
+    //     const user = req.body;
+    //     console.log("Received user data:", user);
+        
+    //     const query = { email: user.email };
+    //     const options = { upsert: true };
+        
+    //     const updateDoc = {
+    //       $set: {
+    //         ...user,
+    //         role: user.role || "user", // Default role
+    //         updatedAt: new Date()
+    //       },
+    //     };
+        
+    //     const result = await userCollection.updateOne(query, updateDoc, options);
+    //     console.log("User save result:", result);
+        
+    //     res.send({ 
+    //       success: true, 
+    //       message: "User saved successfully",
+    //       result 
+    //     });
+    //   } catch (error) {
+    //     console.error("Error saving user:", error);
+    //     res.status(500).send({ 
+    //       success: false, 
+    //       message: "Failed to save user",
+    //       error: error.message 
+    //     });
+    //   }
+    // });
+
+    app.put("/users", async (req, res) => {
+      try {
+        const { email, name, photo } = req.body;
+
+        const existingUser = await userCollection.findOne({ email });
+
+        if (existingUser) {
+          // Update existing user (don't touch role)
+          await userCollection.updateOne(
+            { email },
+            {
+              $set: {
+                name,
+                photo,
+                updatedAt: new Date(),
+              },
+            }
+          );
+          return res.send({ message: "User updated", success: true });
+        }
+
+        // NEW USER - set default role
+        await userCollection.insertOne({
+          name,
+          email,
+          photo,
+          role: "user",
+          createdAt: new Date(),
+        });
+
+        res.send({ message: "User created", success: true });
+      } catch (error) {
+        console.error("Error saving user:", error);
+        res.status(500).send({ error: error.message });
+      }
+    });
+
+    // Get user by email
+    app.get("/users/:email", verifyFBToken, async (req, res) => {
+      try {
+        const email = req.params.email;
+        const user = await userCollection.findOne({ email });
+        
+        if (!user) {
+          return res.status(404).send({ error: "User not found" });
+        }
+        
+        res.send(user);
+      } catch (error) {
+        console.error("Error fetching user:", error);
+        res.status(500).send({ error: error.message });
+      }
+    });
+
+
+    app.get("/users/admin/:email", verifyFBToken, async (req, res) => {
+      const email = req.params.email;
+      const user = await userCollection.findOne({ email });
+      if (user?.role === "admin") {
+        res.send({ admin: true });
+      } else {
+        res.send({ admin: false });
+      }
+    });
+
+    // Get all users (admin only)
+    app.get("/users/all", verifyFBToken, async (req, res) => {
+      try {
+        const users = await userCollection.find().toArray();
+        res.send(users);
+      } catch (err) {
+        res.status(500).send({ error: "Failed to fetch users" });
+      }
+    });
+
+    // Get specific user data by email
+    app.get("/users/:email", verifyFBToken, async (req, res) => {
+      const email = req.params.email;
+      try {
+        const user = await userCollection.findOne({ email });
+        if (user) {
+          res.send(user);
+        } else {
+          res.status(404).send({ error: "User not found" });
+        }
+      } catch (err) {
+        res.status(500).send({ error: "Failed to fetch user" });
+      }
+    });
+
+    // Get pending models (admin only)
+    app.get("/models/pending", verifyFBToken, async (req, res) => {
+      try {
+        const pendingModels = await aiModelCollection
+          .find({ approvalStatus: "pending" })
+          .toArray();
+        res.send(pendingModels);
+      } catch (err) {
+        res.status(500).send({ error: "Failed to fetch pending models" });
+      }
+    });
+
+    // Approve model (admin only)
+    app.patch("/models/:id/approve", verifyFBToken, async (req, res) => {
+      const { id } = req.params;
+      try {
+        const objectId = new ObjectId(id);
+        const result = await aiModelCollection.updateOne(
+          { _id: objectId },
+          { $set: { approvalStatus: "approved" } }
+        );
+        res.send(result);
+      } catch (err) {
+        res.status(500).send({ error: "Failed to approve model" });
+      }
+    });
+
+    // Reject/Delete model (admin only)
+    app.delete("/models/:id/reject", verifyFBToken, async (req, res) => {
+      const { id } = req.params;
+      try {
+        const objectId = new ObjectId(id);
+        const result = await aiModelCollection.deleteOne({ _id: objectId });
+        res.send(result);
+      } catch (err) {
+        res.status(500).send({ error: "Failed to reject model" });
+      }
+    });
+
+    // --- Statistics ---
+
+    app.get("/admin-stats", verifyFBToken, async (req, res) => {
+      const totalModels = await aiModelCollection.countDocuments({ approvalStatus: "approved" });
+      const pendingModels = await aiModelCollection.countDocuments({ approvalStatus: "pending" });
+      const totalUsers = await userCollection.countDocuments();
+      const totalPurchases = await purchaseModelCollection.countDocuments();
+      
+      // Calculate total platform reach
+      const models = await aiModelCollection.find({ approvalStatus: "approved" }).toArray();
+      const totalReach = models.reduce((acc, curr) => acc + (curr.purchased || 0), 0);
+
+      res.send({
+        totalModels,
+        pendingModels,
+        totalUsers,
+        totalPurchases,
+        totalReach
+      });
+    });
+
+    app.get("/user-stats/:email", verifyFBToken, async (req, res) => {
+      const email = req.params.email;
+      
+      const myModelsCount = await aiModelCollection.countDocuments({ createdBy: email });
+      const myPurchasesCount = await purchaseModelCollection.countDocuments({ purchasedBy: email });
+      
+      const myModels = await aiModelCollection.find({ createdBy: email }).toArray();
+      const myReach = myModels.reduce((acc, curr) => acc + (curr.purchased || 0), 0);
+
+      res.send({
+        myModelsCount,
+        myPurchasesCount,
+        myReach
+      });
+    });
+
     // -------------
 
-    await client.db("admin").command({ ping: 1 });
+    // await client.db("admin").command({ ping: 1 });
     console.log(
       "Pinged your deployment. You successfully connected to MongoDB!"
     );
