@@ -72,10 +72,57 @@ async function run() {
     // ---all models get--- (only approved models)
 
     app.get("/models", async (req, res) => {
+      const query = {
+        $or: [
+          { approvalStatus: "approved" },
+          { approvalStatus: { $exists: false } }
+        ]
+      };
+      
       const result = await aiModelCollection
-        .find({ approvalStatus: "approved" })
+        .find(query)
         .toArray();
       res.send(result);
+    });
+
+
+    // Get pending models (admin only) - MUST be before /models/:id
+    app.get("/models/pending", verifyFBToken, async (req, res) => {
+      try {
+        const pendingModels = await aiModelCollection
+          .find({ approvalStatus: "pending" })
+          .toArray();
+        res.send(pendingModels);
+      } catch (err) {
+        res.status(500).send({ error: "Failed to fetch pending models" });
+      }
+    });
+
+    // Approve model (admin only) - MUST be before /models/:id
+    app.patch("/models/:id/approve", verifyFBToken, async (req, res) => {
+      const { id } = req.params;
+      try {
+        const objectId = new ObjectId(id);
+        const result = await aiModelCollection.updateOne(
+          { _id: objectId },
+          { $set: { approvalStatus: "approved" } }
+        );
+        res.send(result);
+      } catch (err) {
+        res.status(500).send({ error: "Failed to approve model" });
+      }
+    });
+
+    // Reject/Delete model (admin only) - MUST be before /models/:id
+    app.delete("/models/:id/reject", verifyFBToken, async (req, res) => {
+      const { id } = req.params;
+      try {
+        const objectId = new ObjectId(id);
+        const result = await aiModelCollection.deleteOne({ _id: objectId });
+        res.send(result);
+      } catch (err) {
+        res.status(500).send({ error: "Failed to reject model" });
+      }
     });
 
 
@@ -143,8 +190,15 @@ async function run() {
 
     // ----Latest Models---- (only approved)
     app.get("/latest-models", async (req, res) => {
+      const query = {
+        $or: [
+          { approvalStatus: "approved" },
+          { approvalStatus: { $exists: false } }
+        ]
+      };
+
       const result = await aiModelCollection
-        .find({ approvalStatus: "approved" })
+        .find(query)
         .sort({ createdAt: -1 })
         .limit(6)
         .toArray();
@@ -287,6 +341,27 @@ async function run() {
       }
     });
 
+    // Get all users (admin only) - MUST be before /users/:email
+    app.get("/users/all", verifyFBToken, async (req, res) => {
+      try {
+        const users = await userCollection.find().toArray();
+        res.send(users);
+      } catch (err) {
+        res.status(500).send({ error: "Failed to fetch users" });
+      }
+    });
+
+    // Check if user is admin - MUST be before /users/:email
+    app.get("/users/admin/:email", verifyFBToken, async (req, res) => {
+      const email = req.params.email;
+      const user = await userCollection.findOne({ email });
+      if (user?.role === "admin") {
+        res.send({ admin: true });
+      } else {
+        res.send({ admin: false });
+      }
+    });
+
     // Get user by email
     app.get("/users/:email", verifyFBToken, async (req, res) => {
       try {
@@ -304,80 +379,7 @@ async function run() {
       }
     });
 
-
-    app.get("/users/admin/:email", verifyFBToken, async (req, res) => {
-      const email = req.params.email;
-      const user = await userCollection.findOne({ email });
-      if (user?.role === "admin") {
-        res.send({ admin: true });
-      } else {
-        res.send({ admin: false });
-      }
-    });
-
-    // Get all users (admin only)
-    app.get("/users/all", verifyFBToken, async (req, res) => {
-      try {
-        const users = await userCollection.find().toArray();
-        res.send(users);
-      } catch (err) {
-        res.status(500).send({ error: "Failed to fetch users" });
-      }
-    });
-
-    // Get specific user data by email
-    app.get("/users/:email", verifyFBToken, async (req, res) => {
-      const email = req.params.email;
-      try {
-        const user = await userCollection.findOne({ email });
-        if (user) {
-          res.send(user);
-        } else {
-          res.status(404).send({ error: "User not found" });
-        }
-      } catch (err) {
-        res.status(500).send({ error: "Failed to fetch user" });
-      }
-    });
-
-    // Get pending models (admin only)
-    app.get("/models/pending", verifyFBToken, async (req, res) => {
-      try {
-        const pendingModels = await aiModelCollection
-          .find({ approvalStatus: "pending" })
-          .toArray();
-        res.send(pendingModels);
-      } catch (err) {
-        res.status(500).send({ error: "Failed to fetch pending models" });
-      }
-    });
-
-    // Approve model (admin only)
-    app.patch("/models/:id/approve", verifyFBToken, async (req, res) => {
-      const { id } = req.params;
-      try {
-        const objectId = new ObjectId(id);
-        const result = await aiModelCollection.updateOne(
-          { _id: objectId },
-          { $set: { approvalStatus: "approved" } }
-        );
-        res.send(result);
-      } catch (err) {
-        res.status(500).send({ error: "Failed to approve model" });
-      }
-    });
-
-    // Reject/Delete model (admin only)
-    app.delete("/models/:id/reject", verifyFBToken, async (req, res) => {
-      const { id } = req.params;
-      try {
-        const objectId = new ObjectId(id);
-        const result = await aiModelCollection.deleteOne({ _id: objectId });
-        res.send(result);
-      } catch (err) {
-        res.status(500).send({ error: "Failed to reject model" });
-      }
-    });
+    // (Routes moved above to fix ordering)
 
     // --- Statistics ---
 
